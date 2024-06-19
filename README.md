@@ -1,8 +1,8 @@
-# Incredible Squaring AVS in Python
+# Incredible Squaring AVS in Javascript
 
 <b> Do not use it in Production, testnet only. </b>
 
-A Python implementation of the EigenLayer [Incredible Squaring AVS](https://github.com/Layr-Labs/incredible-squaring-avs) 
+A Javascript implementation of the EigenLayer [Incredible Squaring AVS](https://github.com/Layr-Labs/incredible-squaring-avs) 
 
 ## Dependencies
 
@@ -32,14 +32,14 @@ make
 make install
 ```
 
-5. Python3
+5. NodeJs
 6. Install required modules:
 ```
-pip install -r requirements.txt
+npm install
 ```
 
 > [!TIP]
-> This AVS employs the [eigensdk-python](https://github.com/abramsymons/eigensdk-python) to facilitate interaction with EigenLayer contracts and to aggregate BLS signatures.
+> This AVS employs the [eigensdk-js](https://github.com/zellular-xyz/eigensdk-js) to facilitate interaction with EigenLayer contracts and to aggregate BLS signatures.
 
 ## Running
 
