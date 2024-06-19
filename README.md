@@ -19,21 +19,8 @@ foundryup
 make build-contracts
 ```
 
-4. Install [MCL](https://github.com/herumi/mcl)
-```
-sudo apt install libgmp3-dev
-wget https://github.com/herumi/mcl/archive/refs/tags/v1.93.zip
-unzip v1.93.zip
-cd mcl-1.93
-mkdir build
-cd build
-cmake ..
-make
-make install
-```
-
-5. NodeJs
-6. Install required modules:
+4. NodeJs
+5. Install required modules:
 ```
 npm install
 ```
