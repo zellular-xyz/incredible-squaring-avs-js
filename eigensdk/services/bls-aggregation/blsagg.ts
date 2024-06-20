@@ -5,10 +5,12 @@ import { bigIntCmp } from "../../utils/helpers.js"
 import TimeoutPromise from "../../utils/timeout-promise.js"
 import { 
 	IAvsRegistryService, 
+	AvsRegistryService,
 	OperatorAvsState, 
 	QuorumAvsState, 
 	SignedTaskResponseDigest 
 } from "../avsregistry/avsregistry.js"
+import { AsyncQueue } from "./async-queue.js"
 
 // BlsAggregationServiceResponse is the response from the bls aggregation service
 export type BlsAggregationServiceResponse = {
@@ -75,7 +77,7 @@ export interface IBlsAggregationService {
 	// GetResponseChannel returns the single channel that meant to be used as the response channel
 	// Any task that is completed (see the completion criterion in the comment above InitializeNewTask)
 	// will be sent on this channel along with all the necessary information to call BLSSignatureChecker onchain
-	getAggregatedResponse(TaskIndex): Promise<BlsAggregationServiceResponse>
+	getAggregatedResponseChannel(): AsyncQueue
 }
 
 type TaskListItem = {
@@ -96,13 +98,15 @@ type TaskListItem = {
 type HashFunction = (input: any) => string;
 
 export class BlsAggregationService implements IBlsAggregationService {
-	avsRegistryService: IAvsRegistryService;
+	avsRegistryService: AvsRegistryService;
 	aggregatedResponses: Record<TaskIndex, TaskListItem>={};
 	hashFunction: HashFunction;
+	aggregatedResponseChannel: AsyncQueue
 
-	constructor(avsRegistryService: IAvsRegistryService, hashFunction: HashFunction) {
+	constructor(avsRegistryService: AvsRegistryService, hashFunction: HashFunction) {
 		this.avsRegistryService = avsRegistryService
 		this.hashFunction = hashFunction
+		this.aggregatedResponseChannel = new AsyncQueue()
 	}
 
 	async initializeNewTask(
@@ -149,7 +153,9 @@ export class BlsAggregationService implements IBlsAggregationService {
     async processNewSignature(taskIndex: TaskIndex, taskResponse: any, blsSignature: Signature, operatorId: OperatorId) {
         if(!this.aggregatedResponses[taskIndex])
             throw "Task not initialized"
-        if(this.aggregatedResponses[taskIndex].signatures[`${operatorId}`])
+
+		// @ts-ignore
+        if(this.aggregatedResponses[taskIndex].signatures[operatorId])
             "Operator signature has already been processed";
 
         const li:TaskListItem = this.aggregatedResponses[taskIndex];
@@ -165,8 +171,9 @@ export class BlsAggregationService implements IBlsAggregationService {
             operatorsAvsStateDict,
         )
 
-        const taskResponseDigest = this.hashFunction(taskResponse)
+        const taskResponseDigest:string = this.hashFunction(taskResponse)
 		let digestAggregatedOperators: aggregatedOperators;
+		// @ts-ignore
         if(!li.aggregatedOperatorsDict[taskResponseDigest]){
             digestAggregatedOperators = {
                 signersApkG2: BLS.newZeroG2Point().add(
@@ -178,6 +185,7 @@ export class BlsAggregationService implements IBlsAggregationService {
 			} as aggregatedOperators;
 		}
         else{
+			// @ts-ignore
             digestAggregatedOperators = li.aggregatedOperatorsDict[taskResponseDigest]
 
             digestAggregatedOperators.signersAggSigG1 = digestAggregatedOperators.signersAggSigG1.add(blsSignature)
@@ -186,8 +194,11 @@ export class BlsAggregationService implements IBlsAggregationService {
             )
             digestAggregatedOperators.signersOperatorIdsSet[`${operatorId}`] = true
             for( const [qn, amount] of Object.entries(operatorsAvsStateDict[`${operatorId}`].stakePerQuorum)) {
+				// @ts-ignore
                 if (!digestAggregatedOperators.signersTotalStakePerQuorum[qn])
+					// @ts-ignore
 					digestAggregatedOperators.signersTotalStakePerQuorum[qn] = 0n
+				// @ts-ignore
 				digestAggregatedOperators.signersTotalStakePerQuorum[qn] += amount
 			}
 		}
@@ -200,20 +211,25 @@ export class BlsAggregationService implements IBlsAggregationService {
             li.totalStakePerQuorum,
             li.quorumThresholdPercentagesMap,
         )){
-            const nonSignersOperatorIds: bigint[] = []
+            const nonSignersOperatorIds: OperatorId[] = []
             for(const operatorId in operatorsAvsStateDict)
                 if (!digestAggregatedOperators.signersOperatorIdsSet[`${operatorId}`])
-                    nonSignersOperatorIds.push(BigInt(operatorId))
+                    nonSignersOperatorIds.push(operatorId)
             nonSignersOperatorIds.sort(bigIntCmp)
 
             const nonSignersPubKeysG1: G1Point[] = nonSignersOperatorIds.map(id => operatorsAvsStateDict[`${id}`].operatorInfo.pubKeys.g1PubKey)
 
-            let indices = await this.avsRegistryService.getCheckSignaturesIndices(
-                {},
-                li.taskCreatedBlock,
-                li.quorumNumbers,
-                nonSignersOperatorIds,
-            )
+            // let indices = await this.avsRegistryService.getCheckSignaturesIndices(
+            //     {},
+            //     li.taskCreatedBlock,
+            //     li.quorumNumbers,
+            //     nonSignersOperatorIds,
+            // )
+			let indices = await this.avsRegistryService.avsRegistryReader.getCheckSignaturesIndices(
+				li.taskCreatedBlock,
+				li.quorumNumbers,
+				nonSignersOperatorIds,
+			)
 
             let result = {
                 err: undefined,
@@ -227,20 +243,22 @@ export class BlsAggregationService implements IBlsAggregationService {
                 ...indices
 			} as BlsAggregationServiceResponse;
 
-            this.aggregatedResponses[taskIndex].promise.resolve(result)
+            // this.aggregatedResponses[taskIndex].promise.resolve(result)
+			await this.aggregatedResponseChannel.enqueue(result)
 		}
 	}
 
-	async getAggregatedResponse(taskIndex: TaskIndex): Promise<BlsAggregationServiceResponse> {
+	getAggregatedResponseChannel(): AsyncQueue {
         // return await wait_for(self.aggregated_responses_c[task_index].future)
-        try{
-            const result = await this.aggregatedResponses[taskIndex].promise.waitToFulfill();
-            return result
-		}
-		catch(err) {
-			// @ts-ignore
-            return {err}
-		}
+		return this.aggregatedResponseChannel;
+        // try{
+        //     const result = await this.aggregatedResponses[taskIndex].promise.waitToFulfill();
+        //     return result
+		// }
+		// catch(err) {
+		// 	// @ts-ignore
+        //     return {err}
+		// }
 	}
 
     private stakeThresholdsMet(

@@ -9,6 +9,7 @@ import { KeyPair, Signature, init as cryptoLibInit } from "./eigensdk/crypto/bls
 import { Operator } from './eigensdk/services/avsregistry/avsregistry';
 import { BuildAllConfig, Clients, buildAll } from './eigensdk/chainio/clients/builder';
 import { OperatorId } from './eigensdk/types/general';
+import {timeout} from './utils'
 
 const logger = pino({
     level: 'info', // Set log level here
@@ -17,8 +18,6 @@ const logger = pino({
 		target: 'pino-pretty'
 	},
 });
-
-const timeout = (ms: number) => new Promise((resolve, reject) => setTimeout(resolve, ms))
 
 class SquaringOperator {
     private config: any;
@@ -33,7 +32,7 @@ class SquaringOperator {
         this.config = config;
     }
 
-	async load() {
+	async init() {
         await this.loadBlsKey();
 		logger.info("BLS key loaded.")
         await this.loadEcdsaKey();
@@ -191,7 +190,7 @@ async function main() {
 	console.log(config)
 	
     const operator = new SquaringOperator(config)
-	await operator.load();
+	await operator.init();
 	return operator.start();
 }
 

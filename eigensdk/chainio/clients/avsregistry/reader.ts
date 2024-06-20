@@ -3,7 +3,7 @@ import {Logger} from 'pino'
 import * as ABIs from '../../../contracts/ABIs'
 import * as chainioUtils from '../../utils'
 import { OperatorPubkeys, OperatorStateRetrieverCheckSignaturesIndices, OperatorStateRetrieverOperator } from '../../../services/avsregistry/avsregistry.js';
-import { OperatorId, Uint8 } from '../../../types/general';
+import { BlockNumber, OperatorId, QuorumNum, Uint8 } from '../../../types/general';
 import { G1Point, G2Point } from '../../../crypto/bls/attestation';
 
 const DEFAULT_QUERY_BLOCK_RANGE = 10_000
@@ -127,12 +127,12 @@ export class AvsRegistryReader {
     }
 
     async getCheckSignaturesIndices(
-        referenceBlockNumber: number,
-        quorumNumbers: number[],
-        nonSignerOperatorIds: number[]
+        referenceBlockNumber: BlockNumber,
+        quorumNumbers: QuorumNum[],
+        nonSignerOperatorIds: OperatorId[]
     ): Promise<OperatorStateRetrieverCheckSignaturesIndices> {
         const nonSignerOperatorIdsBytes = nonSignerOperatorIds.map(operatorId => 
-            Buffer.from(operatorId.toString(16).padStart(64, '0'), 'hex')
+            Buffer.from(operatorId, 'hex')
         );
         const checkSignatureIndices = await this.operatorStateRetriever.methods.getCheckSignaturesIndices(
             this.registryCoordinatorAddr,
@@ -156,7 +156,7 @@ export class AvsRegistryReader {
         return await this.registryCoordinator.methods.getOperatorId(operatorAddress).call();
     }
 
-    async getOperatorFromId(operatorId: Buffer): Promise<Address> {
+    async getOperatorFromId(operatorId: OperatorId): Promise<Address> {
         return this.registryCoordinator.methods.getOperatorFromId(operatorId).call();
     }
 

@@ -7,7 +7,7 @@ import { AvsRegistryReader } from '../../chainio/clients/avsregistry/reader.js';
 import { OperatorInfo, OperatorPubkeys } from '../avsregistry/avsregistry.js';
 import { G1Point } from '../../crypto/bls/attestation.js';
 
-interface OperatorsInfoServiceInMemoryOptions {
+export interface OperatorsInfoServiceInMemoryOptions {
     startBlockPub?: number;
     startBlockSocket?: number;
     checkInterval?: number;
@@ -15,7 +15,7 @@ interface OperatorsInfoServiceInMemoryOptions {
     logger?: Logger;
 }
 
-class OperatorsInfoServiceInMemory {
+export class OperatorsInfoServiceInMemory {
     private avsRegistryReader: AvsRegistryReader;
     private startBlockPub: number;
     private startBlockSocket: number;

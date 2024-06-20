@@ -1,55 +1,65 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import * as yaml from 'js-yaml';
 import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
-import { Web3 } from 'web3';
-import { ethers, Wallet } from 'ethers';
-import { ABI } from 'ethereumjs-abi';
-import * as winston from 'winston';
-import { BuildAllConfig, buildAll } from 'eigensdk/chainio/clients/builder';
-import { AvsRegistryService } from 'eigensdk/services/avsregistry';
-import { OperatorsInfoServiceInMemory } from 'eigensdk/services/operatorsinfo/operatorsinfo_inmemory';
-import { BlsAggregationService, BlsAggregationServiceResponse } from 'eigensdk/services/bls_aggregation/blsagg';
-import { numsToBytes } from 'eigensdk/chainio/utils';
-import { Signature, G1Point, G2Point, g1ToTuple, g2ToTuple } from 'eigensdk/crypto/bls/attestation';
+import { Web3, eth as Web3Eth } from 'web3';
+import { ethers } from 'ethers';
+import pino from 'pino';
+import { Signature } from "./eigensdk/crypto/bls/attestation"
+import { AvsRegistryService } from './eigensdk/services/avsregistry/avsregistry';
+import { BlsAggregationService } from './eigensdk/services/bls-aggregation/blsagg';
+import { OperatorsInfoServiceInMemory } from './eigensdk/services/operatorsinfo/operatorsinfo-inmemory';
+import { BuildAllConfig, buildAll } from './eigensdk/chainio/clients/builder';
+import * as chainioUtils from './eigensdk/chainio/utils';
+import {g1ToTuple, g2ToTuple, timeout} from './utils'
+import {AsyncQueue} from './eigensdk/services/bls-aggregation/async-queue';
 
 // Logger setup
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.json(),
-    transports: [
-        new winston.transports.Console()
-    ]
+const logger = pino({
+    level: 'info', // Set log level here
+    // prettyPrint: { colorize: true }
+	transport: {
+		target: 'pino-pretty'
+	},
 });
 
+export const sigAggQue: AsyncQueue = new AsyncQueue();
+
 class Aggregator {
+	// @ts-ignore
     private web3: Web3;
     private config: any;
+	// @ts-ignore
     private aggregatorAddress: string;
+	// @ts-ignore
     private aggregatorECDSAPrivateKey: string;
     private clients: any;
     private taskManager: any;
+	// @ts-ignore
     private blsAggregationService: BlsAggregationService;
+	// @ts-ignore
     private app: express.Application;
 
     constructor(config: any) {
         this.config = config;
+    }
+
+	async init(){
         this.web3 = new Web3(new Web3.providers.HttpProvider(this.config.eth_rpc_url));
         this.loadECDSAKey();
-        this.loadClients();
-        this.loadTaskManager();
+        await this.loadClients();
+        await this.loadTaskManager();
         this.loadBlsAggregationService();
         this.app = express();
         this.app.use(bodyParser.json());
         this.app.post('/signature', this.submitSignature.bind(this));
-    }
+	}
 
     private loadECDSAKey(): void {
         const ecdsaKeyPassword = process.env.AGGREGATOR_ECDSA_KEY_PASSWORD || '';
         if (!ecdsaKeyPassword) {
-            logger.warning("AGGREGATOR_ECDSA_KEY_PASSWORD not set. using empty string.");
+            logger.warn("AGGREGATOR_ECDSA_KEY_PASSWORD not set. using empty string.");
         }
         const keystorePath = path.join(__dirname, this.config.ecdsa_private_key_store_path);
         const keystore = JSON.parse(fs.readFileSync(keystorePath, 'utf-8'));
@@ -58,23 +68,22 @@ class Aggregator {
         this.aggregatorAddress = wallet.address;
     }
 
-    private loadClients(): void {
+    private async loadClients(): Promise<void> {
         const cfg = new BuildAllConfig(
             this.config.eth_rpc_url,
-            this.config.eth_ws_url,
-            "incredible-squaring",
             this.config.avs_registry_coordinator_address,
             this.config.operator_state_retriever_address,
-            ""
+            "incredible-squaring",
+            this.config.eigen_metrics_ip_port_address
         );
         this.clients = buildAll(cfg, this.aggregatorECDSAPrivateKey, logger);
     }
 
-    private loadTaskManager(): void {
+    private async loadTaskManager(): Promise<void> {
         const serviceManagerAddress = this.clients.avsRegistryWriter.serviceManagerAddr;
         const serviceManagerABI = fs.readFileSync("abis/IncredibleSquaringServiceManager.json", "utf-8");
         const serviceManager = new this.web3.eth.Contract(JSON.parse(serviceManagerABI), serviceManagerAddress);
-        const taskManagerAddress = serviceManager.methods.incredibleSquaringTaskManager().call();
+        const taskManagerAddress:string = await serviceManager.methods.incredibleSquaringTaskManager().call();
         const taskManagerABI = fs.readFileSync("abis/IncredibleSquaringTaskManager.json", "utf-8");
         this.taskManager = new this.web3.eth.Contract(JSON.parse(taskManagerABI), taskManagerAddress);
     }
@@ -82,20 +91,18 @@ class Aggregator {
     private loadBlsAggregationService(): void {
         const operatorInfoService = new OperatorsInfoServiceInMemory(
             this.clients.avsRegistryReader,
-            0,
-            0,
-            logger
+            {logger},
         );
 
-        const avsRegistryService = new AvsRegistryService(
+        const avsRegistryService:AvsRegistryService = new AvsRegistryService(
             this.clients.avsRegistryReader,
             operatorInfoService,
             logger
         );
 
         const hasher = (task: any) => {
-            const encoded = ABI.rawEncode(["uint32", "uint256"], [task.taskIndex, task.numberSquared]);
-            return ethers.utils.keccak256(encoded);
+            const encoded = Web3Eth.abi.encodeParameters(["uint32", "uint256"], [task.taskIndex, task.numberSquared]);
+            return Web3.utils.keccak256(encoded);
         };
 
         this.blsAggregationService = new BlsAggregationService(avsRegistryService, hasher);
@@ -132,7 +139,7 @@ class Aggregator {
 
     public async sendNewTask(i: number): Promise<number> {
         const tx = this.taskManager.methods.createNewTask(
-            i, 100, numsToBytes([0])
+            i, 100, chainioUtils.numsToBytes([0])
         ).send({
             from: this.aggregatorAddress,
             gas: 2000000,
@@ -148,27 +155,29 @@ class Aggregator {
         this.blsAggregationService.initializeNewTask(
             taskIndex,
             receipt.blockNumber,
-            numsToBytes([0]),
+            [0],
             [100],
             60000
         );
         return taskIndex;
     }
 
-    public startSendingNewTasks(): void {
+    public async startSendingNewTasks(): Promise<void> {
         let i = 0;
-        setInterval(async () => {
+		while(true){
             logger.info('Sending new task');
+
             await this.sendNewTask(i);
             i += 1;
-        }, 10000);
+			
+			await timeout(10000)
+		}
     }
 
     public async startSubmittingSignatures(): Promise<void> {
-        while (true) {
-            logger.info('Waiting for response');
-            const aggregatedResponse = await this.blsAggregationService.getAggregatedResponses();
-            if (!aggregatedResponse) continue;
+        const aggregatedResponseChannel = this.blsAggregationService.getAggregatedResponseChannel();
+
+		for await (const aggregatedResponse of aggregatedResponseChannel) {
 
             logger.info(`Aggregated response ${aggregatedResponse}`);
             const response = aggregatedResponse.taskResponse;
@@ -176,7 +185,7 @@ class Aggregator {
             const task = [
                 response.numberToBeSquared,
                 response.blockNumber,
-                numsToBytes([0]),
+                chainioUtils.numsToBytes([0]),
                 100,
             ];
             const taskResponse = [
@@ -209,10 +218,21 @@ class Aggregator {
     }
 }
 
-(async () => {
+async function main() {
+
     const config = yaml.load(fs.readFileSync("config-files/aggregator.yaml", "utf8"));
+
     const aggregator = new Aggregator(config);
-    aggregator.startSendingNewTasks();
-    await aggregator.startSubmittingSignatures();
-    aggregator.startServer();
-})();
+	await aggregator.init()
+
+    aggregator.startSendingNewTasks().catch(e => {});
+    aggregator.startSubmittingSignatures().catch(e => {});
+    
+	aggregator.startServer();
+}
+
+main()
+	.catch(e => console.dir(e, {depth: 6}))
+	.finally(() => {
+		process.exit(0)
+	})
