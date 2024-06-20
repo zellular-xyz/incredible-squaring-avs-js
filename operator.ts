@@ -72,22 +72,29 @@ class SquaringOperator {
 
     public async start(): Promise<void> {
         logger.info("Starting Operator...");
-        const eventFilter = this.taskManager.events.NewTaskCreated.createFilter({
-            fromBlock: "latest"
-        });
-		while(true){
-            eventFilter.get((error: any, events: any) => {
-                if (error) {
-                    logger.error(`Error fetching events: ${error}`);
-                    return;
-                }
-                events.forEach((event: any) => {
-                    logger.info(`New task created: ${JSON.stringify(event)}`);
-                    this.processTaskEvent(event);
-                });
-            });
-			await timeout(3000)
-        }
+		let latestBlock:bigint|string = 'latest';
+		const web3 = new Web3(new Web3.providers.HttpProvider(this.config.eth_rpc_url));
+	
+		while (true) {
+			try {
+				const currentBlock = await web3.eth.getBlockNumber();
+				const events:any[] = await this.taskManager.getPastEvents("NewTaskCreated", {
+					fromBlock: latestBlock,
+					toBlock: currentBlock
+				});
+	
+				events.forEach(event => {
+					logger.info('Event received:', event);
+					this.processTaskEvent(event)
+				});
+	
+				latestBlock = currentBlock + 1n; // Move to the next block for the next poll
+			} catch (error) {
+				logger.error('Error polling for events:', error);
+			}
+	
+			await timeout(5000);
+		}
     }
 
     public processTaskEvent(event: any): void {
@@ -126,7 +133,6 @@ class SquaringOperator {
 			this.blsKeyPair = await KeyPair.readFromFile(
 				this.config.bls_private_key_store_path, blsKeyPassword
 			);
-			console.log("=========================")
 		}catch(e){
 			console.log(e)
 			throw e
@@ -182,14 +188,16 @@ async function main() {
 	
     const configFile: string = fs.readFileSync("config-files/operator.anvil.yaml", 'utf8');
     const config: any = yaml.load(configFile, { schema: yaml.JSON_SCHEMA }) as any;
+	console.log(config)
 	
     const operator = new SquaringOperator(config)
 	await operator.load();
 	return operator.start();
 }
 
-if (require.main === module) {
-	main()
+
+main()
 	.catch(e => console.dir(e, {depth: 6}))
-	.finally(() => process.exit(0))
-}
+	.finally(() => {
+		process.exit(0)
+	})

@@ -1,5 +1,5 @@
 import * as ethers from 'ethers'
-import mcl, { G2 } from 'mcl-wasm'
+import * as mcl from 'mcl-wasm'
 import { newG1Point } from '../bls/attestation'
 
 // modulus for the underlying field F_p of the elliptic curve
@@ -117,7 +117,7 @@ export function mulByGeneratorG1(a: mcl.Fr): mcl.G1 {
 	return mcl.mul(getG1Generator(), a)
 }
 
-export function mulByGeneratorG2(a: mcl.Fr): G2 {
+export function mulByGeneratorG2(a: mcl.Fr): mcl.G2 {
 	return mcl.mul(getG2Generator(), a)
 }
 
