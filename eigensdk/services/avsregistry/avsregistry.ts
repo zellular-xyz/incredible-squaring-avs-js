@@ -88,12 +88,12 @@ export interface IAvsRegistryService {
 		blockNumber: BlockNumber
     ): Promise<Record<QuorumNum, QuorumAvsState>>;
 
-    // getCheckSignaturesIndices (
-    //     opts: CallOpts,
-    //     referenceBlockNumber: BlockNumber,
-    //     quorumNumbers: QuorumNum[],
-    //     nonSignerOperatorIds: bigint[]
-    // ): Promise<OperatorStateRetrieverCheckSignaturesIndices>;
+    getCheckSignaturesIndices (
+        opts: CallOpts,
+        referenceBlockNumber: BlockNumber,
+        quorumNumbers: QuorumNum[],
+        nonSignerOperatorIds: OperatorId[]
+    ): Promise<OperatorStateRetrieverCheckSignaturesIndices>;
 }
 
 export class AvsRegistryService implements IAvsRegistryService {
@@ -175,6 +175,7 @@ export class AvsRegistryService implements IAvsRegistryService {
             let totalStake = 0n;
 
             for ( let [_, operatorState] of Object.entries(operatorsAvsState) ) {
+                // eslint-disable-next-line no-prototype-builtins
                 if (operatorState.stakePerQuorum.hasOwnProperty(quorumNum)) {
                     aggPubkeyG1 = aggPubkeyG1.add(
                         operatorState.operatorInfo.pubKeys.g1PubKey
@@ -195,20 +196,15 @@ export class AvsRegistryService implements IAvsRegistryService {
         return quorumsAvsState;
     }
 
-    // async getCheckSignaturesIndices (
-    //     opts: CallOpts,
-    //     referenceBlockNumber: BlockNumber,
-    //     quorumNumbers: QuorumNum[],
-    //     nonSignerOperatorIds: bigint[]
-    // ): Promise<OperatorStateRetrieverCheckSignaturesIndices> {
-	// 	// TODO: fill with contract data
-	// 	return {
-	// 		nonSignerQuorumBitmapIndices: [],
-	// 		quorumApkIndices: [],
-	// 		totalStakeIndices: [],
-	// 		nonSignerStakeIndices: []
-	// 	} as OperatorStateRetrieverCheckSignaturesIndices
-	// }
+    async getCheckSignaturesIndices (
+        opts: CallOpts,
+        referenceBlockNumber: BlockNumber,
+        quorumNumbers: QuorumNum[],
+        nonSignerOperatorIds: OperatorId[]
+    ): Promise<OperatorStateRetrieverCheckSignaturesIndices> {
+		// TODO: fill with contract data
+		return this.avsRegistryReader.getCheckSignaturesIndices(referenceBlockNumber, quorumNumbers, nonSignerOperatorIds)
+	}
 
     private async getOperatorInfo(operatorId: OperatorId): Promise<OperatorInfo> {
         const operatorAddr = await this.avsRegistryReader.getOperatorFromId(operatorId);

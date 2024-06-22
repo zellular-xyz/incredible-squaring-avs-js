@@ -98,12 +98,12 @@ type TaskListItem = {
 type HashFunction = (input: any) => string;
 
 export class BlsAggregationService implements IBlsAggregationService {
-	avsRegistryService: AvsRegistryService;
+	avsRegistryService: IAvsRegistryService;
 	aggregatedResponses: Record<TaskIndex, TaskListItem>={};
 	hashFunction: HashFunction;
 	aggregatedResponseChannel: AsyncQueue
 
-	constructor(avsRegistryService: AvsRegistryService, hashFunction: HashFunction) {
+	constructor(avsRegistryService: IAvsRegistryService, hashFunction: HashFunction) {
 		this.avsRegistryService = avsRegistryService
 		this.hashFunction = hashFunction
 		this.aggregatedResponseChannel = new AsyncQueue()
@@ -225,7 +225,8 @@ export class BlsAggregationService implements IBlsAggregationService {
             //     li.quorumNumbers,
             //     nonSignersOperatorIds,
             // )
-			let indices = await this.avsRegistryService.avsRegistryReader.getCheckSignaturesIndices(
+			let indices = await this.avsRegistryService.getCheckSignaturesIndices(
+				{},
 				li.taskCreatedBlock,
 				li.quorumNumbers,
 				nonSignersOperatorIds,
@@ -243,7 +244,7 @@ export class BlsAggregationService implements IBlsAggregationService {
                 ...indices
 			} as BlsAggregationServiceResponse;
 
-            // this.aggregatedResponses[taskIndex].promise.resolve(result)
+            this.aggregatedResponses[taskIndex].promise.resolve(result)
 			await this.aggregatedResponseChannel.enqueue(result)
 		}
 	}
@@ -251,14 +252,17 @@ export class BlsAggregationService implements IBlsAggregationService {
 	getAggregatedResponseChannel(): AsyncQueue {
         // return await wait_for(self.aggregated_responses_c[task_index].future)
 		return this.aggregatedResponseChannel;
-        // try{
-        //     const result = await this.aggregatedResponses[taskIndex].promise.waitToFulfill();
-        //     return result
-		// }
-		// catch(err) {
-		// 	// @ts-ignore
-        //     return {err}
-		// }
+	}
+
+	async getAggregatedResponse(taskIndex: TaskIndex) {
+        try{
+            const result = await this.aggregatedResponses[taskIndex].promise.waitToFulfill();
+            return result
+		}
+		catch(err) {
+			// @ts-ignore
+            return {err}
+		}
 	}
 
     private stakeThresholdsMet(

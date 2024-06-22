@@ -61,7 +61,7 @@ export class AvsRegistryReader {
         return operatorStakes.map((quorum: any) => 
             quorum.map((operator: any) => ({
                 operator: operator[0],
-                operatorId: `0x${operator[1].toString('hex')}`,
+                operatorId: operator[1],
                 stake: operator[2]
             }))
         );
@@ -85,7 +85,7 @@ export class AvsRegistryReader {
         );
     }
 
-    async getOperatorsStakeInQuorumsOfOperatorAtBlock(operatorId: bigint, blockNumber: number): Promise<[number[], OperatorStateRetrieverOperator[][]]> {
+    async getOperatorsStakeInQuorumsOfOperatorAtBlock(operatorId: OperatorId, blockNumber: number): Promise<[number[], OperatorStateRetrieverOperator[][]]> {
         const result:[number, number[]] = await this.operatorStateRetriever.methods.getOperatorState(
             this.registryCoordinatorAddr,
             operatorId,
@@ -99,7 +99,7 @@ export class AvsRegistryReader {
         const operatorStakesFormatted = operatorStakes.map((quorum: any) => 
             quorum.map((operator: any) => ({
                 operator: operator[0],
-                operatorId: `0x${operator[1].toString('hex')}`,
+                operatorId: operator[1],
                 stake: operator[2]
             }))
         );
@@ -107,7 +107,7 @@ export class AvsRegistryReader {
         return [quorums, operatorStakesFormatted];
     }
 
-    async getOperatorsStakeInQuorumsOfOperatorAtCurrentBlock(operatorId: bigint): Promise<[number[], OperatorStateRetrieverOperator[][]]> {
+    async getOperatorsStakeInQuorumsOfOperatorAtCurrentBlock(operatorId: OperatorId): Promise<[number[], OperatorStateRetrieverOperator[][]]> {
         const curBlock = await this.ethHttpClient.eth.getBlockNumber();
         if (curBlock > Math.pow(2, 32) - 1) {
             throw new Error("Current block number is too large to be converted to uint32");
@@ -115,7 +115,7 @@ export class AvsRegistryReader {
         return this.getOperatorsStakeInQuorumsOfOperatorAtBlock(operatorId, Number(curBlock));
     }
 
-    async getOperatorStakeInQuorumsOfOperatorAtCurrentBlock(operatorId: Buffer): Promise<Record<number, bigint>> {
+    async getOperatorStakeInQuorumsOfOperatorAtCurrentBlock(operatorId: OperatorId): Promise<Record<number, bigint>> {
         const quorumBitmap:number = await this.registryCoordinator.methods.getCurrentQuorumBitmap(operatorId).call();
         const quorums = chainioUtils.bitmapToQuorumIds(quorumBitmap);
         const quorumStakes: Record<number, bigint> = {};

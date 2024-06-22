@@ -1,5 +1,5 @@
 import { G1Point, KeyPair } from "../../crypto/bls/attestation.js"
-import { OperatorId, Uint32, Uint8 } from "../../types/general.js"
+import { BlockNumber, OperatorId, QuorumNum, Uint32, Uint8 } from "../../types/general.js"
 import { 
 	IAvsRegistryService, 
 	CallOpts, 
@@ -72,9 +72,9 @@ export class FakeAvsRegistryService implements IAvsRegistryService {
 
     async getCheckSignaturesIndices(
         opts: CallOpts,
-        referenceBlockNumber: Uint32,
-        quorumNumbers: Uint8[],
-        nonSignerOperatorIds: bigint[],
+        referenceBlockNumber: BlockNumber,
+        quorumNumbers: QuorumNum[],
+        nonSignerOperatorIds: OperatorId[],
     ): Promise<OperatorStateRetrieverCheckSignaturesIndices> {
         const result = {
             nonSignerQuorumBitmapIndices: [],

@@ -16,15 +16,15 @@ export class BuildAllConfig {
     ethHttpUrl: string;
     registryCoordinatorAddr: string;
     operatorStateRetrieverAddr: string;
-    avsName: string;
-    promMetricsIpPortAddress: string;
+    avsName?: string;
+    promMetricsIpPortAddress?: string;
 
     constructor(
         ethHttpUrl: string,
         registryCoordinatorAddr: string,
         operatorStateRetrieverAddr: string,
-        avsName: string,
-        promMetricsIpPortAddress: string
+        avsName?: string,
+        promMetricsIpPortAddress?: string
     ) {
         this.ethHttpUrl = ethHttpUrl;
         this.registryCoordinatorAddr = registryCoordinatorAddr;

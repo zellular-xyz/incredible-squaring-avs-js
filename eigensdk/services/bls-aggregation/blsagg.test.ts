@@ -65,7 +65,7 @@ test("1 quorum 1 operator 1 correct signature", async () => {
 	const taskResponse = "sample text response"
 	const taskResponseDigest = hashFunction(taskResponse)
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
@@ -98,6 +98,7 @@ test("1 quorum 1 operator 1 correct signature", async () => {
 		nonSignerStakeIndices: [],
 	} as BlsAggregationServiceResponse;
 
+	// const gotAggregatedResponse = await blsAggregationService.getAggregatedResponse(taskIndex)
 	const gotAggregatedResponse = await blsAggregationService.getAggregatedResponse(taskIndex)
 	
 	expect(stringifyAggResp(wantAggregatedResponse))
@@ -107,17 +108,17 @@ test("1 quorum 1 operator 1 correct signature", async () => {
 test("1 quorum 3 operator 3 correct signatures", async () => {
 
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
 	const operator2:TestOperator = {
-		operatorId: 2n,
+		operatorId: "2",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("02"),
 	}
 	const operator3:TestOperator = {
-		operatorId: 3n,
+		operatorId: "3",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("03"),
 	}
@@ -178,12 +179,12 @@ test("1 quorum 3 operator 3 correct signatures", async () => {
 
 test("2 quorums 2 operators 2 correct signatures", async () => {
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
 	const operator2:TestOperator = {
-		operatorId: 2n,
+		operatorId: "2",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("02"),
 	}
@@ -237,12 +238,12 @@ test("2 quorums 2 operators 2 correct signatures", async () => {
 
 test("2 concurrent tasks 2 quorums 2 operators 2 correct signatures", async () => {
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
 	const operator2:TestOperator = {
-		operatorId: 2n,
+		operatorId: "2",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("02"),
 	}
@@ -331,7 +332,7 @@ test("2 concurrent tasks 2 quorums 2 operators 2 correct signatures", async () =
 
 test("1 quorum 1 operator 0 signatures - task expired", async () => {
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
@@ -359,12 +360,12 @@ test("1 quorum 1 operator 0 signatures - task expired", async () => {
 test("1 quorum 2 operator 1 correct signature quorumThreshold 50% - verified", async () => {
 
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
 	const operator2:TestOperator = {
-		operatorId: 2n,
+		operatorId: "2",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("02"),
 	}
@@ -411,12 +412,12 @@ test("1 quorum 2 operator 1 correct signature quorumThreshold 50% - verified", a
 
 test("1 quorum 2 operator 1 correct signature quorumThreshold 60% - task expired", async () => {
 	const operator1:TestOperator = {
-		operatorId: 1n,
+		operatorId: "1",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("01"),
 	}
 	const operator2:TestOperator = {
-		operatorId: 2n,
+		operatorId: "2",
 		stakePerQuorum: {1: 100n, 2: 200n},
 		blsKeyPair: KeyPair.fromString("02"),
 	}
