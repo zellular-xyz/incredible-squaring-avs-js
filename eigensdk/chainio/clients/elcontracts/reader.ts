@@ -82,10 +82,10 @@ export class ELReader {
   async calculateOperatorAvsRegistrationDigestHash(
     operatorAddr: Address,
     avs: Address,
-    salt: Uint8Array, // Assuming bytes are converted to Uint8Array
+    salt: string, // Assuming bytes are converted to Uint8Array
     expiry: number,
   ): Promise<string> {
-    return await this.avsDirectory.methods.calculateOperatorAvsRegistrationDigestHash(
+    return await this.avsDirectory.methods.calculateOperatorAVSRegistrationDigestHash(
       operatorAddr,
       avs,
       salt,

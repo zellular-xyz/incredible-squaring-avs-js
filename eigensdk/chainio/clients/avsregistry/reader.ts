@@ -161,8 +161,8 @@ export class AvsRegistryReader {
     }
 
     async isOperatorRegistered(operatorAddress: Address): Promise<boolean> {
-        const operatorStatus:number = await this.registryCoordinator.methods.getOperatorStatus(operatorAddress).call();
-        return operatorStatus === 1;
+        const operatorStatus:bigint = await this.registryCoordinator.methods.getOperatorStatus(operatorAddress).call();
+        return operatorStatus === 1n;
     }
 
     async queryExistingRegisteredOperatorPubkeys(
@@ -180,32 +180,36 @@ export class AvsRegistryReader {
 
         for (let i = startBlock; i <= stopBlock; i += blockRange) {
             toBlock = Math.min(i + blockRange - 1, stopBlock);
-			// @ts-ignore
-            const pubkeyUpdates = await this.blsApkRegistry.events.NewPubkeyRegistration.createFilter({
-                fromBlock: i,
-                toBlock: toBlock
-            }).getAllEntries();
+
+            let pubkeyUpdates:any[] = await this.blsApkRegistry.getPastEvents(
+				// @ts-ignore
+				'NewPubkeyRegistration',
+				{
+                	fromBlock: i,
+                	toBlock: toBlock
+            	}
+			);
 
             this.logger.debug(
-                "avsRegistryChainReader.query_existing_registered_operator_pubkeys",
                 {
                     numTransactionLogs: pubkeyUpdates.length,
                     fromBlock: i,
                     toBlock: toBlock,
-                }
+                },
+                "avsRegistryChainReader.query_existing_registered_operator_pubkeys",
             );
 
             for (const update of pubkeyUpdates) {
-                const operatorAddr = update.args.operator;
-                const pubkeyG1 = update.args.pubkeyG1;
-                const pubkeyG2 = update.args.pubkeyG2;
+                const operatorAddr = update.returnValues.operator;
+                const pubkeyG1 = update.returnValues.pubkeyG1;
+                const pubkeyG2 = update.returnValues.pubkeyG2;
                 operatorPubkeys.push({
                     // g1PubKey: { X: pubkeyG1.X, Y: pubkeyG1.Y },
-                    g1PubKey: new G1Point(BigInt(pubkeyG1.Y), BigInt(pubkeyG1.Y)),
+                    g1PubKey: new G1Point(BigInt(pubkeyG1.X), BigInt(pubkeyG1.Y)),
                     // g2PubKey: { X: pubkeyG2.X, Y: pubkeyG2.Y },
                     g2PubKey: new G2Point(
-						BigInt(pubkeyG1.X[0]), BigInt(pubkeyG1.X[1]),
-						BigInt(pubkeyG1.Y[0]), BigInt(pubkeyG1.Y[1]),
+						BigInt(pubkeyG2.X[0]), BigInt(pubkeyG2.X[1]),
+						BigInt(pubkeyG2.Y[0]), BigInt(pubkeyG2.Y[1]),
 					),
                 });
                 operatorAddresses.push(operatorAddr);
@@ -230,14 +234,14 @@ export class AvsRegistryReader {
         for (let i = startBlock; i <= stopBlock; i += blockRange) {
             toBlock = Math.min(i + blockRange - 1, stopBlock);
 			// @ts-ignore
-            const socketUpdates = await this.registryCoordinator.events.OperatorSocketUpdate.createFilter({
+            const socketUpdates:any[] = await this.registryCoordinator.getPastEvents("OperatorSocketUpdate", {
                 fromBlock: i,
                 toBlock: toBlock
-            }).getAllEntries();
+            });
 
             let numSocketUpdates = 0;
             for (const update of socketUpdates) {
-                operatorIdToSocketMap[update.args.operatorId] = update.args.socket;
+                operatorIdToSocketMap[update.returnValues.operatorId] = update.returnValues.socket;
                 numSocketUpdates += 1;
             }
 

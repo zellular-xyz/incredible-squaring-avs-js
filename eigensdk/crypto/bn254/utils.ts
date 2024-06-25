@@ -18,10 +18,10 @@ export async function init() {
   mcl.setMapToMode(0);
 }
 
-const _G2_XA = BigInt("0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2")
-const _G2_XB = BigInt("0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed")
-const _G2_YA = BigInt("0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b")
-const _G2_YB = BigInt("0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa")
+const _G2_XA = BigInt("0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed")
+const _G2_XB = BigInt("0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2")
+const _G2_YA = BigInt("0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa")
+const _G2_YB = BigInt("0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b")
 
 
 export function verifySig(sig: mcl.G1, pubkey: mcl.G2, msg: string): boolean {
@@ -109,7 +109,7 @@ export function getG1Generator() {
 
 export function getG2Generator() {
 	let G2 = new mcl.G2()
-	G2.setStr(`1 ${_G2_XB} ${_G2_XA} ${_G2_YB} ${_G2_YA}`)
+	G2.setStr(`1 ${_G2_XA} ${_G2_XB} ${_G2_YA} ${_G2_YB}`)
 	return G2
 }
 

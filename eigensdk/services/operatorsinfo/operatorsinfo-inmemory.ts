@@ -3,9 +3,10 @@ import { keccak256, toHex } from 'web3-utils';
 import { Logger, pino } from 'pino';
 // import { G1Point, AvsRegistryReader, OperatorPubkeys, Address, OperatorInfo } from './types'; // Adjust the import according to your actual types
 // import { Thread } from 'threads';
-import { AvsRegistryReader } from '../../chainio/clients/avsregistry/reader.js';
-import { OperatorInfo, OperatorPubkeys } from '../avsregistry/avsregistry.js';
-import { G1Point } from '../../crypto/bls/attestation.js';
+import { AvsRegistryReader } from '../../chainio/clients/avsregistry/reader';
+import { OperatorInfo, OperatorPubkeys } from '../avsregistry/avsregistry';
+import { G1Point } from '../../crypto/bls/attestation';
+import { timeout } from '../../../utils';
 
 export interface OperatorsInfoServiceInMemoryOptions {
     startBlockPub?: number;
@@ -35,7 +36,7 @@ export class OperatorsInfoServiceInMemory {
         const {
             startBlockPub = 0,
             startBlockSocket = 0,
-            checkInterval = 10,
+            checkInterval = 10_000,
             logFilterQueryBlockRange = 10_000,
             logger = pino({
                 level: 'info',
@@ -57,7 +58,6 @@ export class OperatorsInfoServiceInMemory {
         this.operatorAddrToId = new Map<Address, string>();
         this.socketDict = new Map<string, string>();
 
-        this.getEvents();
         // this.thread = new Thread(this._serviceThread.bind(this));
         // this.thread.start();
 
@@ -76,14 +76,15 @@ export class OperatorsInfoServiceInMemory {
         while (true) {
             try {
                 await this.getEvents();
-            } catch (e) {
-                this.logger.error(`Get event Error: ${e}`);
+            } catch (e:any) {
+                this.logger.error(`Get event Error: ${e.message}`);
             }
-            await new Promise(resolve => setTimeout(resolve, this.checkInterval * 1000));
+            await timeout(this.checkInterval);
         }
     }
 
     private async getEvents(): Promise<void> {
+		this.logger.info(`OperatorsInfoServiceInMemory.GetEvents ...`)
         const [ 
 			operatorAddresses, operatorPubkeys, toBlockPub 
 		 ] = await this.avsRegistryReader.queryExistingRegisteredOperatorPubkeys(
@@ -94,7 +95,7 @@ export class OperatorsInfoServiceInMemory {
 			operatorSockets, toBlockSocket 
 		] = await this.avsRegistryReader.queryExistingRegisteredOperatorSockets(this.startBlockSocket);
 
-        for (let i = 0; i < operatorAddresses.length; i++) {
+		for (let i = 0; i < operatorAddresses.length; i++) {
             const operatorAddr = operatorAddresses[i];
             const operatorPubkey = operatorPubkeys[i];
             const operatorId = OperatorsInfoServiceInMemory.operatorIdFromG1Pubkey(operatorPubkey.g1PubKey);

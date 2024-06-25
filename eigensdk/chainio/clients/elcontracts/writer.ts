@@ -8,7 +8,7 @@ import {
 } from "web3";
 // import {TxReceipt, LocalAccount } from "web3";
 import * as ABIs from '../../../contracts/ABIs'
-import {sendTransaction} from "../../utils";
+import {sendContractCall} from "../../utils";
 import { ELReader } from './reader';
 import { LocalAccount } from '../../../types/general';
 
@@ -30,22 +30,28 @@ export class ELWriter {
 		this.logger.info(`Registering operator ${operator.address} to EigenLayer`);
 
 		const opDetails: {
-		earningsReceiver: string;
-		stakerOptOutWindowBlocks?: number;
-		delegationApprover: string;
+			earningsReceiver: string;
+			stakerOptOutWindowBlocks?: number;
+			delegationApprover: string;
 		} = {
-		earningsReceiver: Web3.utils.toChecksumAddress(operator.earningsReceiverAddress),
-		stakerOptOutWindowBlocks: operator.stakerOptOutWindowBlocks,
-		delegationApprover: Web3.utils.toChecksumAddress(operator.delegationApproverAddress),
+			earningsReceiver: Web3.utils.toChecksumAddress(operator.earningsReceiverAddress),
+			stakerOptOutWindowBlocks: operator.stakerOptOutWindowBlocks,
+			delegationApprover: Web3.utils.toChecksumAddress(operator.delegationApproverAddress),
 		};
 
-		const func = this.delegationManager.methods.registerAsOperator(opDetails, operator.metadataUrl);
+		// const func = this.delegationManager.methods.registerAsOperator();
 
 		try {
-			const receipt = sendTransaction(func, this.pkWallet, this.ethHttpClient);
+			const receipt = sendContractCall(
+				this.delegationManager,
+				"registerAsOperator",
+				[opDetails, operator.metadataUrl], 
+				this.pkWallet, 
+				this.ethHttpClient
+			);
 			return receipt;
 		} catch (e) {
-			this.logger.error(e);
+			this.logger.error("An error occurred when registering operator", e);
 			return null;
 		}
 	}
@@ -67,7 +73,13 @@ export class ELWriter {
 
 		try {
 			// Update operator details
-			receipt = await sendTransaction(this.delegationManager.methods.modifyOperatorDetails(opDetails), this.pkWallet, this.ethHttpClient);
+			receipt = await sendContractCall(
+				this.delegationManager,
+				'modifyOperatorDetails',
+				[opDetails], 
+				this.pkWallet, 
+				this.ethHttpClient
+			);
 		} catch (e) {
 			this.logger.error(e);
 			return null;
@@ -82,7 +94,13 @@ export class ELWriter {
 
 		try {
 			// Update operator metadata URI (if successful)
-			receipt = await sendTransaction(this.delegationManager.methods.updateOperatorMetadataURI(operator.metadataUrl), this.pkWallet, this.ethHttpClient);
+			receipt = await sendContractCall(
+				this.delegationManager,
+				'updateOperatorMetadataURI',
+				[operator.metadataUrl],
+				this.pkWallet, 
+				this.ethHttpClient
+			);
 		} catch (e) {
 			this.logger.error(e);
 			return null;
@@ -119,19 +137,27 @@ export class ELWriter {
 			return null;
 		}
 
-		const approveFunc = underlyingTokenContract.methods.approve(this.strategyManagerAddr, amount);
-
 		try {
-			await sendTransaction(approveFunc, this.pkWallet, this.ethHttpClient);
+			await sendContractCall(
+				underlyingTokenContract,
+				"approve",
+				[this.strategyManagerAddr, amount], 
+				this.pkWallet, 
+				this.ethHttpClient
+			);
 		} catch (error) {
 			this.logger.error(error);
 			return null;
 		}
 
-		const depositFunc = this.strategyManager.methods.depositIntoStrategy(strategyAddr, underlyingTokenAddr, amount);
-
 		try {
-			const receipt = await sendTransaction(depositFunc, this.pkWallet, this.ethHttpClient);
+			const receipt = await sendContractCall(
+				this.strategyManager, 
+				"depositIntoStrategy", 
+				[strategyAddr, underlyingTokenAddr, amount], 
+				this.pkWallet, 
+				this.ethHttpClient
+			);
 			this.logger.info('Successfully deposited the token into the strategy', {
 				txHash: receipt.transactionHash,
 				strategy: strategyAddr,

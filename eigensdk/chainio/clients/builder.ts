@@ -10,7 +10,12 @@ import {ELReader} from './elcontracts/reader';
 import {ELWriter} from './elcontracts/writer';
 import { LocalAccount } from '../../types/general';
 
-const logger = pino({ level: 'info' });
+const logger = pino({ 
+	level: 'info',
+	transport: {
+		target: 'pino-pretty'
+	}
+});
 
 export class BuildAllConfig {
     ethHttpUrl: string;
@@ -173,7 +178,11 @@ export class Clients {
 
 export async function buildAll(config: BuildAllConfig, ecdsaPrivateKey: string, logger: Logger): Promise<Clients> {
     const ethHttpClient = new Web3(new Web3.providers.HttpProvider(config.ethHttpUrl));
-    const pkWallet = new ethers.Wallet(ecdsaPrivateKey);
+	const wallet = new ethers.Wallet(ecdsaPrivateKey);
+    const pkWallet:LocalAccount = {
+		address: wallet.address,
+		privateKey: ecdsaPrivateKey.replace("0x", "")
+	}
 
     const [elReader, elWriter] = await config.buildElClients(pkWallet);
 

@@ -10,6 +10,7 @@ import { Operator } from './eigensdk/services/avsregistry/avsregistry';
 import { BuildAllConfig, Clients, buildAll } from './eigensdk/chainio/clients/builder';
 import { OperatorId } from './eigensdk/types/general';
 import {timeout} from './utils'
+import { g1PointToArgs } from './eigensdk/utils/helpers';
 
 const logger = pino({
     level: 'info', // Set log level here
@@ -41,13 +42,13 @@ class SquaringOperator {
 		logger.info("Clients key loaded.")
         await this.loadTaskManager();
 		logger.info("TaskMan key loaded.")
-        if (this.config.register_operator_on_startup === 'true') {
-            await this.register();
-		logger.info("Register done.")
+        if (this.config.register_operator_on_startup === true) {
+			await this.register();
+			logger.info("Register done.")
         }
         // operator id can only be loaded after registration
         await this.loadOperatorId();
-		logger.info("OperatorId loaded.")
+		logger.info(`OperatorId loaded: ${this.operatorId}.`)
 	}
 
     public async register(): Promise<void> {
@@ -58,15 +59,25 @@ class SquaringOperator {
             stakerOptOutWindowBlocks: 0,
             metadataUrl: "",
         };
-        await this.clients.elWriter.registerAsOperator(operator);
-        await this.clients.avsRegistryWriter.registerOperatorInQuorumWithAvsRegistryCoordinator(
-            this.operatorEcdsaPrivateKey!,
-            Web3.utils.randomBytes(32),
-            Math.floor(Date.now() / 1000) + 3600,
-            this.blsKeyPair!,
-            [0],
-            "Not Needed",
-        );
+		
+		const alreadyElRegistered = await this.clients.elReader.isOperatorRegistered(this.config.operator_address)
+		if(!alreadyElRegistered){
+			logger.info("Registering ElContract ...")
+        	await this.clients.elWriter.registerAsOperator(operator);
+		}
+		const alreadyAvsRegistered = await this.clients.avsRegistryReader.isOperatorRegistered(this.config.operator_address)
+		if(!alreadyAvsRegistered){
+			logger.info("Registering AvsRegistryCoordinator ...")
+			await this.clients.avsRegistryWriter.registerOperatorInQuorumWithAvsRegistryCoordinator(
+				this.operatorEcdsaPrivateKey!,
+				// Web3.utils.randomBytes(32),
+				Web3.utils.randomHex(32),
+				Math.floor(Date.now() / 1000) + 3600,
+				this.blsKeyPair!,
+				[0],
+				"Not Needed",
+			);
+		}
     }
 
     public async start(): Promise<void> {
@@ -83,13 +94,13 @@ class SquaringOperator {
 				});
 	
 				events.forEach(event => {
-					logger.info('Event received:', event);
+					logger.info(event, 'Event received:');
 					this.processTaskEvent(event)
 				});
 	
 				latestBlock = currentBlock + 1n; // Move to the next block for the next poll
 			} catch (error) {
-				logger.error('Error polling for events:', error);
+				logger.error(error, 'Error polling for events:');
 			}
 	
 			await timeout(5000);
@@ -97,29 +108,31 @@ class SquaringOperator {
     }
 
     public processTaskEvent(event: any): void {
-        const taskIndex: number = event.args.taskIndex;
-        const numberToBeSquared: number = event.args.task.numberToBeSquared;
-        const numberSquared: number = Math.pow(numberToBeSquared, 2);
+        const taskIndex: number = event.returnValues.taskIndex;
+        const numberToBeSquared: bigint = event.returnValues.task.numberToBeSquared;
+        const numberSquared: bigint = numberToBeSquared ** 2n;
         const encoded: string = web3Eth.abi.encodeParameters(["uint32", "uint256"], [taskIndex, numberSquared]);
         const hashBytes: string = Web3.utils.keccak256(encoded);
         const signature: Signature = this.blsKeyPair?.signMessage(hashBytes)!;
         logger.info(
             `Signature generated, task id: ${taskIndex}, number squared: ${numberSquared}, signature: ${signature.getStr()}`
         );
-        console.log('operator data id', this.operatorId);
         const data = {
-            task_id: taskIndex,
-            number_to_be_squared: numberToBeSquared,
-            number_squared: numberSquared,
-            signature: signature,
-            block_number: event.blockNumber,
+            task_id: taskIndex.toString(10),
+            number_to_be_squared: "0x"+numberToBeSquared.toString(16),
+            number_squared: "0x"+numberSquared.toString(16),
+            signature: g1PointToArgs(signature),
+            block_number: "0x"+event.blockNumber.toString(16),
             operator_id: this.operatorId,
         };
         logger.info(`Submitting result for task to aggregator ${JSON.stringify(data)}`);
         // prevent submitting task before initialize_new_task gets completed on aggregator
         setTimeout(() => {
             const url = `http://${this.config.aggregator_server_ip_port_address}/signature`;
-            axios.post(url, { json: data });
+            axios.post(url, data)
+			.catch(e => {
+				logger.error(`An error occurred when sending signature to TaskIndex: ${taskIndex}`, e)
+			})
         }, 3000);
     }
 
@@ -128,14 +141,9 @@ class SquaringOperator {
         if (!blsKeyPassword) {
             logger.warn("OPERATOR_BLS_KEY_PASSWORD not set. using empty string.");
         }
-		try {
-			this.blsKeyPair = await KeyPair.readFromFile(
-				this.config.bls_private_key_store_path, blsKeyPassword
-			);
-		}catch(e){
-			console.log(e)
-			throw e
-		}
+		this.blsKeyPair = await KeyPair.readFromFile(
+			this.config.bls_private_key_store_path, blsKeyPassword
+		);
 		logger.info(`BLS key: ${this.blsKeyPair?.pubG1.getStr()}`)
     }
 
@@ -187,7 +195,6 @@ async function main() {
 	
     const configFile: string = fs.readFileSync("config-files/operator.anvil.yaml", 'utf8');
     const config: any = yaml.load(configFile, { schema: yaml.JSON_SCHEMA }) as any;
-	console.log(config)
 	
     const operator = new SquaringOperator(config)
 	await operator.init();

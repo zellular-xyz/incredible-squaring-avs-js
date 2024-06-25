@@ -3,17 +3,19 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
-import { Web3, eth as Web3Eth } from 'web3';
+import { AbiItem, Web3, eth as Web3Eth } from 'web3';
 import { ethers } from 'ethers';
 import pino from 'pino';
-import { Signature } from "./eigensdk/crypto/bls/attestation"
+import { Signature, init as blsInit } from "./eigensdk/crypto/bls/attestation"
 import { AvsRegistryService } from './eigensdk/services/avsregistry/avsregistry';
-import { BlsAggregationService } from './eigensdk/services/bls-aggregation/blsagg';
+import { BlsAggregationService, BlsAggregationServiceResponse } from './eigensdk/services/bls-aggregation/blsagg';
 import { OperatorsInfoServiceInMemory } from './eigensdk/services/operatorsinfo/operatorsinfo-inmemory';
 import { BuildAllConfig, buildAll } from './eigensdk/chainio/clients/builder';
 import * as chainioUtils from './eigensdk/chainio/utils';
 import {g1ToTuple, g2ToTuple, timeout} from './utils'
+import {decodeTxReceiptLogs} from './eigensdk/utils/helpers'
 import {AsyncQueue} from './eigensdk/services/bls-aggregation/async-queue';
+import * as ABIs from './eigensdk/contracts/ABIs'
 
 // Logger setup
 const logger = pino({
@@ -35,6 +37,7 @@ class Aggregator {
 	// @ts-ignore
     private aggregatorECDSAPrivateKey: string;
     private clients: any;
+	private taskManagerABI: AbiItem[] = [];
     private taskManager: any;
 	// @ts-ignore
     private blsAggregationService: BlsAggregationService;
@@ -76,7 +79,7 @@ class Aggregator {
             "incredible-squaring",
             this.config.eigen_metrics_ip_port_address
         );
-        this.clients = buildAll(cfg, this.aggregatorECDSAPrivateKey, logger);
+        this.clients = await buildAll(cfg, this.aggregatorECDSAPrivateKey, logger);
     }
 
     private async loadTaskManager(): Promise<void> {
@@ -85,7 +88,8 @@ class Aggregator {
         const serviceManager = new this.web3.eth.Contract(JSON.parse(serviceManagerABI), serviceManagerAddress);
         const taskManagerAddress:string = await serviceManager.methods.incredibleSquaringTaskManager().call();
         const taskManagerABI = fs.readFileSync("abis/IncredibleSquaringTaskManager.json", "utf-8");
-        this.taskManager = new this.web3.eth.Contract(JSON.parse(taskManagerABI), taskManagerAddress);
+		this.taskManagerABI = JSON.parse(taskManagerABI) as AbiItem[];
+        this.taskManager = new this.web3.eth.Contract(this.taskManagerABI, taskManagerAddress);
     }
 
     private loadBlsAggregationService(): void {
@@ -108,9 +112,9 @@ class Aggregator {
         this.blsAggregationService = new BlsAggregationService(avsRegistryService, hasher);
     }
 
-    public submitSignature(req: Request, res: Response): void {
+    public async submitSignature(req: Request, res: Response): Promise<void> {
         const data = req.body;
-        const signature = new Signature(data.signature.X, data.signature.Y);
+        const signature = new Signature(BigInt(data.signature.X), BigInt(data.signature.Y));
         const taskIndex = data.task_id;
         const taskResponse = {
             taskIndex,
@@ -120,12 +124,13 @@ class Aggregator {
         };
 
         try {
-            this.blsAggregationService.processNewSignature(
+            await this.blsAggregationService.processNewSignature(
                 taskIndex, taskResponse, signature, data.operator_id
             );
             res.status(200).send('true');
         } catch (e) {
-            logger.error(`Submitting signature failed: ${e}`);
+			// console.log(e)
+            logger.error(e, `Submitting signature failed: ${e}`);
             res.status(500).send('false');
         }
     }
@@ -149,10 +154,11 @@ class Aggregator {
         });
 
         const receipt = await tx;
-        const event = this.taskManager.events.NewTaskCreated().processLog(receipt.logs[0]);
-        const taskIndex = event.returnValues.taskIndex;
+		// @ts-ignore
+        const event = decodeTxReceiptLogs(receipt, this.taskManagerABI)[0];
+        const taskIndex = event.taskIndex;
         logger.info(`Successfully sent the new task ${taskIndex}`);
-        this.blsAggregationService.initializeNewTask(
+        const taskInfo = await this.blsAggregationService.initializeNewTask(
             taskIndex,
             receipt.blockNumber,
             [0],
@@ -177,9 +183,13 @@ class Aggregator {
     public async startSubmittingSignatures(): Promise<void> {
         const aggregatedResponseChannel = this.blsAggregationService.getAggregatedResponseChannel();
 
-		for await (const aggregatedResponse of aggregatedResponseChannel) {
+		for await (const _aggResponse of aggregatedResponseChannel) {
+			const aggregatedResponse:BlsAggregationServiceResponse = _aggResponse;
 
-            logger.info(`Aggregated response ${aggregatedResponse}`);
+            logger.info({
+				taskIndex: aggregatedResponse.taskIndex,
+				taskResponse: aggregatedResponse.taskResponse,
+			}, `Task response aggregated.`);
             const response = aggregatedResponse.taskResponse;
 
             const task = [
@@ -194,7 +204,7 @@ class Aggregator {
             ];
             const nonSignersStakesAndSignature = [
                 aggregatedResponse.nonSignerQuorumBitmapIndices,
-                aggregatedResponse.nonSignersPubkeysG1.map(g1ToTuple),
+                aggregatedResponse.nonSignersPubKeysG1.map(g1ToTuple),
                 aggregatedResponse.quorumApksG1.map(g1ToTuple),
                 g2ToTuple(aggregatedResponse.signersApkG2),
                 g1ToTuple(aggregatedResponse.signersAggSigG1),
@@ -214,25 +224,34 @@ class Aggregator {
             });
 
             const receipt = await tx;
+			logger.info({
+				taskIndex: response.taskIndex,
+				txHash: receipt.transactionHash
+			}, "Task response registered onchain.")
         }
     }
 }
 
 async function main() {
+	await blsInit()
 
     const config = yaml.load(fs.readFileSync("config-files/aggregator.yaml", "utf8"));
 
     const aggregator = new Aggregator(config);
 	await aggregator.init()
 
-    aggregator.startSendingNewTasks().catch(e => {});
-    aggregator.startSubmittingSignatures().catch(e => {});
-    
-	aggregator.startServer();
+	return Promise.all([
+		aggregator.startSendingNewTasks(),
+		aggregator.startSubmittingSignatures(),
+		aggregator.startServer()
+	])
 }
 
 main()
-	.catch(e => console.dir(e, {depth: 6}))
+	.catch(e => {
+		console.dir(e, {depth: 6})
+		console.log(`An error occurred. terminating aggregator process.`)
+	})
 	.finally(() => {
 		process.exit(0)
 	})

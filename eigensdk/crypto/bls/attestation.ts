@@ -96,9 +96,10 @@ export class G2Point extends mcl.G2 {
 	}
 
 	static fromStr(val: string): G2Point {
-		let res = new G2Point(0n, 0n, 0n, 0n)
-		res.setStr(val)
-		return res;
+		return new G2Point(
+			// @ts-ignore
+			...val.split(" ").slice(-4).map(BigInt)
+		)
 	}
 }
 
@@ -201,7 +202,6 @@ export class KeyPair {
 	static async readFromFile(path: string, password: string): Promise<KeyPair> {
 		const data = await fs.readFile(path, 'utf-8');
 		const keystoreJson = JSON.parse(data);
-		console.log(keystoreJson)
 
 		if (!keystoreJson.address)
 			keystoreJson.id = "00000000-0000-0000-0000-000000000000"

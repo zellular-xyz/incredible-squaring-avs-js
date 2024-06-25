@@ -171,7 +171,7 @@ export class AvsRegistryService implements IAvsRegistryService {
         const quorumsAvsState: Record<QuorumNum, QuorumAvsState> = {};
 
     	for ( let quorumNum of quorumNumbers ) {
-            let aggPubkeyG1 = newZeroG1Point();
+            let aggPubkeyG1:G1Point = newZeroG1Point();
             let totalStake = 0n;
 
             for ( let [_, operatorState] of Object.entries(operatorsAvsState) ) {

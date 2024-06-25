@@ -7,6 +7,7 @@ import { G1Point, KeyPair, Signature } from "../../../crypto/bls/attestation";
 import * as chainIoUtils from '../../utils'
 import * as ABIs from '../../../contracts/ABIs'
 import { LocalAccount } from "../../../types/general";
+import { signRawData } from "../../../utils/helpers";
 
 const DEFAULT_QUERY_BLOCK_RANGE = 10_000;
 
@@ -45,7 +46,7 @@ export class AvsRegistryWriter {
 
     async registerOperatorInQuorumWithAvsRegistryCoordinator(
         operatorEcdsaPrivateKey: string,
-        operatorToAvsRegistrationSigSalt: Uint8Array,
+        operatorToAvsRegistrationSigSalt: string,
         operatorToAvsRegistrationSigExpiry: number,
         blsKeyPair: KeyPair,
         quorumNumbers: number[],
@@ -53,57 +54,61 @@ export class AvsRegistryWriter {
     ): Promise<TransactionReceipt | null> {
         const account = this.ethHttpClient.eth.accounts.privateKeyToAccount(operatorEcdsaPrivateKey);
         const operatorAddr = account.address;
-        this.logger.info("Registering operator with the AVS's registry coordinator", {
+        this.logger.info({
             "avs-service-manager": this.serviceManagerAddr,
             "operator": operatorAddr,
             "quorumNumbers": quorumNumbers,
             "socket": socket,
-        });
+        }, "Registering operator with the AVS's registry coordinator");
 
         const g1HashedMsgToSign = await this.registryCoordinator.methods.pubkeyRegistrationMessageHash(operatorAddr).call();
 		if(!g1HashedMsgToSign)
 			throw `Unable to get pubkeyRegistrationMessageHash`
         const signedMsg: Signature = blsKeyPair.signHashedToCurveMessage(new G1Point(
-			BigInt(g1HashedMsgToSign[0]),
-			BigInt(g1HashedMsgToSign[1]),
+			g1HashedMsgToSign[0],
+			g1HashedMsgToSign[1],
 		));
-
         const pubkeyRegParams = [
-            [signedMsg.getX().getStr(), signedMsg.getY().getStr()],
-            [blsKeyPair.pubG1.getX().getStr(), blsKeyPair.pubG1.getY().getStr()],
-            [
-                [blsKeyPair.pubG2.getX().get_a().getStr(), blsKeyPair.pubG2.getX().get_b().getStr()],
-                [blsKeyPair.pubG2.getY().get_a().getStr(), blsKeyPair.pubG2.getY().get_b().getStr()],
-            ],
+            {X: signedMsg.getX().getStr(), Y: signedMsg.getY().getStr()},
+            {X: blsKeyPair.pubG1.getX().getStr(), Y: blsKeyPair.pubG1.getY().getStr()},
+            {
+                X: [blsKeyPair.pubG2.getX().get_b().getStr(), blsKeyPair.pubG2.getX().get_a().getStr()],
+                Y: [blsKeyPair.pubG2.getY().get_b().getStr(), blsKeyPair.pubG2.getY().get_a().getStr()],
+			},
         ];
-
         const msgToSign:string = await this.elReader.calculateOperatorAvsRegistrationDigestHash(
             operatorAddr,
             this.serviceManagerAddr,
             operatorToAvsRegistrationSigSalt,
             operatorToAvsRegistrationSigExpiry,
         );
-        const operatorSignature = this.ethHttpClient.eth.accounts.sign(msgToSign, operatorEcdsaPrivateKey);
+        const operatorSignature = signRawData(msgToSign, operatorEcdsaPrivateKey)
+
         const operatorSignatureWithSaltAndExpiry = [
+			// @ts-ignore
             operatorSignature,
             operatorToAvsRegistrationSigSalt,
             operatorToAvsRegistrationSigExpiry,
         ];
-
-        const func = await this.registryCoordinator.methods.registerOperator(
-            chainIoUtils.numsToBytes(quorumNumbers),
-            socket,
-            pubkeyRegParams,
-            operatorSignatureWithSaltAndExpiry,
-        );
         try {
-            const receipt = await chainIoUtils.sendTransaction(func, this.pkWallet, this.ethHttpClient);
-            this.logger.info("Successfully registered operator with AVS registry coordinator", {
+            const receipt = await chainIoUtils.sendContractCall(
+				this.registryCoordinator, 
+				"registerOperator",
+				[
+					chainIoUtils.numsToBytes(quorumNumbers),
+					socket,
+					pubkeyRegParams,
+					operatorSignatureWithSaltAndExpiry,
+				],
+				this.pkWallet, 
+				this.ethHttpClient
+			);
+            this.logger.info({
                 "txHash": receipt.transactionHash,
                 "avs-service-manager": this.serviceManagerAddr,
                 "operator": operatorAddr,
                 "quorumNumbers": quorumNumbers,
-            });
+            }, "Successfully registered operator with AVS registry coordinator");
             return receipt;
         } catch (e) {
             this.logger.error(e);
@@ -119,11 +124,14 @@ export class AvsRegistryWriter {
             "quorumNumbers": quorumNumbers,
         });
 
-        const func = await this.registryCoordinator.methods.updateOperatorsForQuorum(
-            operatorsPerQuorum, chainIoUtils.numsToBytes(quorumNumbers)
-        );
         try {
-            const receipt = await chainIoUtils.sendTransaction(func, this.pkWallet, this.ethHttpClient);
+            const receipt = await chainIoUtils.sendContractCall(
+				this.registryCoordinator,
+				"updateOperatorsForQuorum",
+				[operatorsPerQuorum, chainIoUtils.numsToBytes(quorumNumbers)], 
+				this.pkWallet, 
+				this.ethHttpClient
+			);
             this.logger.info("Successfully updated stakes for entire operator set", {
                 "txHash": receipt.transactionHash,
                 "quorumNumbers": quorumNumbers,
@@ -140,9 +148,14 @@ export class AvsRegistryWriter {
             "operators": operators,
         });
 
-        const func = await this.registryCoordinator.methods.updateOperators(operators);
         try {
-            const receipt = await chainIoUtils.sendTransaction(func, this.pkWallet, this.ethHttpClient);
+            const receipt = await chainIoUtils.sendContractCall(
+				this.registryCoordinator,
+				"updateOperators",
+				[operators], 
+				this.pkWallet, 
+				this.ethHttpClient
+			);
             this.logger.info("Successfully updated stakes of operator subset for all quorums", {
                 "txHash": receipt.transactionHash,
                 "operators": operators,
@@ -157,11 +170,14 @@ export class AvsRegistryWriter {
     async deregisterOperator(quorumNumbers: number[]): Promise<TransactionReceipt | null> {
         this.logger.info("Deregistering operator with the AVS's registry coordinator");
 
-        const func = await this.registryCoordinator.methods.deregisterOperator(
-            chainIoUtils.numsToBytes(quorumNumbers)
-        );
         try {
-            const receipt = await chainIoUtils.sendTransaction(func, this.pkWallet, this.ethHttpClient);
+            const receipt = await chainIoUtils.sendContractCall(
+				this.registryCoordinator, 
+				"deregisterOperator",
+				[chainIoUtils.numsToBytes(quorumNumbers)],
+				this.pkWallet, 
+				this.ethHttpClient
+			);
             this.logger.info("Successfully deregistered operator with the AVS's registry coordinator", {
                 "txHash": receipt.transactionHash,
             });
@@ -177,9 +193,14 @@ export class AvsRegistryWriter {
             "socket": socket,
         });
 
-        const func = this.registryCoordinator.methods.updateSocket(socket);
         try {
-            const receipt = await chainIoUtils.sendTransaction(func, this.pkWallet, this.ethHttpClient);
+            const receipt = await chainIoUtils.sendContractCall(
+				this.registryCoordinator,
+				"updateSocket",
+				[socket], 
+				this.pkWallet,
+				this.ethHttpClient
+			);
             this.logger.info("Successfully updated socket", {
                 "txHash": receipt.transactionHash,
             });

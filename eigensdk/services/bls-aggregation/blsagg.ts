@@ -1,16 +1,16 @@
-import { G1Point, G2Point, Signature } from "../../crypto/bls/attestation.js"
-import * as BLS from '../../crypto/bls/attestation.js'
-import { BlockNumber, OperatorId, QuorumNum, TaskIndex, Uint32, Uint8 } from "../../types/general.js"
-import { bigIntCmp } from "../../utils/helpers.js"
-import TimeoutPromise from "../../utils/timeout-promise.js"
+import { G1Point, G2Point, Signature } from "../../crypto/bls/attestation"
+import * as BLS from '../../crypto/bls/attestation'
+import { BlockNumber, OperatorId, QuorumNum, TaskIndex, Uint32, Uint8 } from "../../types/general"
+import { bigIntCmp, g2PointFromArgs, g2PointToArgs, typedEntries } from "../../utils/helpers"
+import TimeoutPromise from "../../utils/timeout-promise"
 import { 
 	IAvsRegistryService, 
 	AvsRegistryService,
 	OperatorAvsState, 
 	QuorumAvsState, 
 	SignedTaskResponseDigest 
-} from "../avsregistry/avsregistry.js"
-import { AsyncQueue } from "./async-queue.js"
+} from "../avsregistry/avsregistry"
+import { AsyncQueue } from "./async-queue"
 
 // BlsAggregationServiceResponse is the response from the bls aggregation service
 export type BlsAggregationServiceResponse = {
@@ -89,10 +89,10 @@ type TaskListItem = {
 	quorumsAvsStateDict: Record<QuorumNum, QuorumAvsState>,
 	totalStakePerQuorum: Record<QuorumNum, bigint>
 	quorumApksG1: G1Point[],
-	aggregatedOperatorsDict: Object,
+	aggregatedOperatorsDict: Record<string, aggregatedOperators>,
 	timeout: number,
 	promise: TimeoutPromise,
-	signatures: Object,
+	signatures: Record<OperatorId, Signature>,
 }
 
 type HashFunction = (input: any) => string;
@@ -124,9 +124,9 @@ export class BlsAggregationService implements IBlsAggregationService {
             quorumThresholdPercentagesMap[qn] = quorumThresholdPercentages[i]
 
         const operatorsAvsStateDict = await this.avsRegistryService.getOperatorsAvsStateAtBlock(quorumNumbers, taskCreatedBlock);
-        const quorumsAvsStateDict = await this.avsRegistryService.getQuorumsAvsStateAtBlock(quorumNumbers, taskCreatedBlock)
-
-        const totalStakePerQuorum: Record<QuorumNum, bigint> = {}
+		const quorumsAvsStateDict = await this.avsRegistryService.getQuorumsAvsStateAtBlock(quorumNumbers, taskCreatedBlock)
+		
+		const totalStakePerQuorum: Record<QuorumNum, bigint> = {}
         for( const quorumNum in quorumsAvsStateDict)
             totalStakePerQuorum[quorumNum] = quorumsAvsStateDict[quorumNum].totalStake
 
@@ -148,11 +148,13 @@ export class BlsAggregationService implements IBlsAggregationService {
             promise: new TimeoutPromise(timeToExpiry, `Task ${taskIndex} expired`),
             signatures: {},
 		} as TaskListItem
+
+		return this.aggregatedResponses[taskIndex]
 	}
 
     async processNewSignature(taskIndex: TaskIndex, taskResponse: any, blsSignature: Signature, operatorId: OperatorId) {
         if(!this.aggregatedResponses[taskIndex])
-            throw "Task not initialized"
+            throw `Task ${taskIndex} not initialized`
 
 		// @ts-ignore
         if(this.aggregatedResponses[taskIndex].signatures[operatorId])
@@ -176,8 +178,8 @@ export class BlsAggregationService implements IBlsAggregationService {
 		// @ts-ignore
         if(!li.aggregatedOperatorsDict[taskResponseDigest]){
             digestAggregatedOperators = {
-                signersApkG2: BLS.newZeroG2Point().add(
-					operatorsAvsStateDict[`${operatorId}`].operatorInfo.pubKeys.g2PubKey
+                signersApkG2: G2Point.fromStr(
+					operatorsAvsStateDict[operatorId].operatorInfo.pubKeys.g2PubKey.getStr()
 				),
                 signersAggSigG1: blsSignature,
                 signersOperatorIdsSet: {[`${operatorId}`]: true},
@@ -204,7 +206,7 @@ export class BlsAggregationService implements IBlsAggregationService {
 		}
         this.aggregatedResponses[taskIndex].aggregatedOperatorsDict[taskResponseDigest] = digestAggregatedOperators
 
-        this.aggregatedResponses[taskIndex].signatures[`${operatorId}`] = blsSignature
+        this.aggregatedResponses[taskIndex].signatures[operatorId] = blsSignature
 
         if(this.stakeThresholdsMet(
             digestAggregatedOperators.signersTotalStakePerQuorum,
@@ -270,7 +272,9 @@ export class BlsAggregationService implements IBlsAggregationService {
         totalStakePerQuorum: Record<QuorumNum, bigint>,
         quorumThresholdPercentagesMap: Record<QuorumNum, Uint8>,
     ): boolean {
-        for(const [quorumNum, quorumThresholdPercentage] of Object.entries(quorumThresholdPercentagesMap)) {
+		// @ts-ignore
+		const entries = typedEntries<QuorumNum, Uint8>(quorumThresholdPercentagesMap)
+        for(const [quorumNum, quorumThresholdPercentage] of entries) {
             const signedStakeByQuorum = signedStakePerQuorum[quorumNum]
             if(signedStakeByQuorum == undefined)
                 return false
