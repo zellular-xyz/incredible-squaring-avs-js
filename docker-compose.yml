@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  incredible-squaring-avs-js:
+    depends_on:
+      - anvil
+      - graph-node
+    build: .
+    # volumes:
+    #   - .:/app
+    working_dir: /app
+    command: scripts/entrypoint.sh
+    networks:
+      - incredible-squaring-network
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: anvil
+    ports:
+      # opening the port so we can easily cast to anvil from localhost
+      - "8545:8545"
+    # changed entrypoint because the default 'bash -c' entrypoint wasn't working the intended way...
+    entrypoint: anvil
+    # volumes:
+    #   - ./tests/anvil/avs-and-eigenlayer-deployed-anvil-state/state.json:/state.json
+    # command: --host 0.0.0.0 --load-state /state.json
+    command: --host 0.0.0.0
+    networks:
+      - incredible-squaring-network
+
+  graph-node:
+    extends:
+      file: ./avs-subgraph/docker-compose.yml
+      service: graph-node
+    networks:
+      - incredible-squaring-network
+
+networks:
+  incredible-squaring-network:
+    name: incredible-squaring-network
+    driver: host

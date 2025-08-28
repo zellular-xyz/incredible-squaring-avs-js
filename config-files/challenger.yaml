@@ -1,0 +1,4 @@
+challengerAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+ethRpcUrl: http://localhost:8545
+promMetricsIpPortAddress : localhost:9090
+ecdsaPrivateKeyStorePath : tests/keys/challenger.ecdsa.key.json

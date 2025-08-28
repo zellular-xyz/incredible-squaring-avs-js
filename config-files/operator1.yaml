@@ -1,0 +1,11 @@
+production: true
+operatorAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+ethRpcUrl: http://localhost:8545
+promMetricsIpPortAddress : localhost:9090
+ecdsaPrivateKeyStorePath: tests/keys/operator1.ecdsa.key.json
+blsPrivateKeyStorePath: tests/keys/operator1.bls.key.json
+aggregatorServerIpPortAddress: localhost:8090
+registerOperatorOnStartup: true
+operatorSetId: 0x00
+socket: operator-socket
+timesFailing: 10

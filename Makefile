@@ -1,48 +1,147 @@
 ############################# HELP MESSAGE #############################
-# Make sure the help command stays first, so that it's printed by default when `make` is called without arguments
-.PHONY: help tests
-help:
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+.PHONY: $(MAKECMDGOALS)
 
-AGGREGATOR_ECDSA_PRIV_KEY=0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
-CHALLENGER_ECDSA_PRIV_KEY=0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
+___BUILD___: ## 
 
-CHAINID=31337
-# Make sure to update this if the strategy address changes
-# check in contracts/script/output/${CHAINID}/credible_squaring_avs_deployment_output.json
-STRATEGY_ADDRESS=0x7a2088a1bFc9d81c55368AE168C2C02570cB814F
-DEPLOYMENT_FILES_DIR=contracts/script/output/${CHAINID}
+rebuild:
+	COMPOSE_BAKE=true docker compose build --no-cache
 
------------------------------: ## 
+___TESTS___: ## 
+
+test:
+	pytest -s ./tests/test_integration.py
+
+build-docker:
+	docker build -t incredible-squaring-avs-js .
+
+test-docker:
+	docker run --rm incredible-squaring-avs-js
+
+test-docker-compose: ## Run tests using docker-compose
+	docker-compose run --rm incredible-squaring-avs-js
+
+lint: ## Run linting with flake8
+	flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+	flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+format: ## Format code with black and isort
+	black .
+	isort .
+
+format-check: ## Check if code is properly formatted
+	black --check squaring_operator.py aggregator.py challenger.py cli tests
+	isort --check-only squaring_operator.py aggregator.py challenger.py cli tests
+
+mypy: ## Run type checking with mypy
+	mypy .
+
+check-all: format-check lint mypy ## Run all code quality checks
 
 ___CONTRACTS___: ## 
 
 build-contracts: ## builds all contracts
 	cd contracts && forge build
 
-deploy-eigenlayer-contracts-to-anvil-and-save-state: ## Deploy eigenlayer
-	./tests/anvil/deploy-eigenlayer-save-anvil-state.sh
+deploy-eigenlayer: ## Deploy eigenlayer
+	./tests/anvil/deploy-eigenlayer.sh
 
-deploy-incredible-squaring-contracts-to-anvil-and-save-state: ## Deploy avs
-	./tests/anvil/deploy-avs-save-anvil-state.sh
+deploy-avs: ## Deploy avs
+	./tests/anvil/deploy-avs.sh
 
-deploy-all-to-anvil-and-save-state: deploy-eigenlayer-contracts-to-anvil-and-save-state deploy-incredible-squaring-contracts-to-anvil-and-save-state ## deploy eigenlayer, shared avs contracts, and inc-sq contracts 
+create-quorum:
+	./tests/anvil/create-quorum.sh
 
-start-anvil-chain-with-el-and-avs-deployed: ## starts anvil from a saved state file (with el and avs contracts deployed)
-	./tests/anvil/start-anvil-chain-with-el-and-avs-deployed.sh
+modify-allocations:
+	./tests/anvil/modify-allocations.sh
+
+uam-permissions:
+	./tests/anvil/uam-permissions.sh
+
+set-allocation-delay:
+	./tests/anvil/set-allocation-delay.sh
+
+set-allocation-delay-and-modify-allocation: set-allocation-delay modify-allocations
+
+deploy-all: deploy-eigenlayer deploy-avs uam-permissions create-quorum
+
+start-anvil-with-state:
+	anvil --load-state tests/anvil/avs-and-eigenlayer-deployed-anvil-state/state.json --print-traces -vvvvv
+
+start-graph-node:
+	docker compose -f avs-subgraph/docker-compose.yml  up
+
+deploy-subgraph:
+	cd avs-subgraph && \
+	graph codegen && \
+	graph build && \
+	graph create --node http://localhost:8020/ avs-subgraph && \
+	graph deploy -l v1 --node http://localhost:8020/ --ipfs http://localhost:5001 avs-subgraph
+
+
+___PYTHON_SETUP___: ## 
+
+setup-and-activate: ## Create venv, activate it, and install dependencies
+	python3 -m venv .venv && \
+	bash -c "source .venv/bin/activate && \
+	pip install . && \
+	echo 'Virtual environment created, activated, and dependencies installed.' && \
+	echo 'For future sessions, activate with: source .venv/bin/activate'"
 
 __CLI__: ## 
 
-send-fund: ## sends fund to the operator saved in tests/keys/test.ecdsa.key.json
-	cast send 0x860B6912C2d0337ef05bbC89b0C2CB6CbAEAB4A5 --value 10ether --private-key 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
+cli-setup-operator: send-fund cli-register-operator-with-eigenlayer cli-deposit-into-mocktoken-strategy cli-register-operator-with-avs ## registers operator with eigenlayer and avs
 
------------------------------: ## 
-# We pipe all zapper logs through https://github.com/maoueh/zap-pretty so make sure to install it
-# TODO: piping to zap-pretty only works when zapper environment is set to production, unsure why
+cli-register-operator-with-eigenlayer: ## registers operator with delegationManager
+	./.venv/bin/python -m cli.main register-with-eigenlayer
+
+cli-deposit-into-mocktoken-strategy: ## 
+	./.venv/bin/python -m cli.main deposit
+
+cli-register-operator-with-avs: ## 
+	./.venv/bin/python -m cli.main register-with-avs
+
+cli-deregister-operator-with-avs: ## 
+	./.venv/bin/python -m cli.main deregister-from-avs
+
+send-fund: ## sends fund to the operator saved in tests/keys/test.ecdsa.key.json
+	cast send 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --value 10ether --private-key 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
+
 ____OFFCHAIN_SOFTWARE___: ## 
 start-aggregator: ## 
-	npx ts-node aggregator.ts
+	LOG_LEVEL=debug npx tsx aggregator.ts
 
 start-operator: ## 
-	npx ts-node operator.ts
+	LOG_LEVEL=debug npx tsx operator.ts
 
+start-challenger: ## 
+	LOG_LEVEL=debug npx tsx challenger.ts
+
+__REWARDS__: ##
+
+SENDER_ADDR=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
+
+TOKEN_ADDRESS=$(shell jq -r '.addresses.token' contracts/script/deployments/incredible-squaring/31337.json)
+
+create-avs-distributions-root:
+	export PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 && \
+	cd contracts && \
+		forge script script/SetupDistributions.s.sol --rpc-url http://localhost:8545 \
+			--broadcast --sig "runAVSRewards()" -v --sender ${SENDER_ADDR}
+
+create-operator-directed-distributions-root:
+	export PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 && \
+	cd contracts && \
+		forge script script/SetupDistributions.s.sol --rpc-url http://localhost:8545 \
+			--broadcast --sig "runOperatorDirected()" -v --sender ${SENDER_ADDR}
+
+claim-distributions:
+	export PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 && \
+	cd contracts && \
+		forge script script/SetupDistributions.s.sol --rpc-url http://localhost:8545 \
+			--broadcast --sig "executeProcessClaim()" -v --sender ${SENDER_ADDR}
+
+get-deployed-token-address:
+	@echo "Deployed token Address: $(TOKEN_ADDRESS)"
+
+claimer-account-token-balance:
+	cast balance --erc20 $(TOKEN_ADDRESS) 0x0000000000000000000000000000000000000001
